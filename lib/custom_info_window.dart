@@ -78,9 +78,13 @@ class _CustomInfoWindowState extends State<CustomInfoWindow> {
 
   /// Calculate the position of [CustomInfoWindow] and redraw on screen.
   void _updateInfoWindow() async {
-    if (_latLng == null || _child == null || _offset == null
-      || widget.controller.googleMapController == null
-      || !mounted // 위젯이 마운트되었는지 확인
+    // _showNow가 false이면, 위젯은 보이지 않으므로 크기 측정을 시도할 필요가 없음
+    // 또한, 위젯이 보이지 않을 때는 currentContext가 null일 수 있음
+    if (!_showNow || _latLng == null ||
+      _child == null ||
+      _offset == null ||
+      widget.controller.googleMapController == null ||
+      !mounted
     ) {
       return;
     }
@@ -144,13 +148,19 @@ class _CustomInfoWindowState extends State<CustomInfoWindow> {
     _latLng = latLng;
     _offset = offsetValue; // 마커 y좌표에서 (정보창 높이 + offset) 만큼 위로 올림
 
-    // 위젯이 마운트된 후, 다음 프레임에서 크기를 측정하고 위치를 업데이트
-    // _child가 처음 렌더링될 때 크기가 결정되므로 필요
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _updateInfoWindow();
-      }
-    });
+    if (mounted) {
+      // 위젯을 즉시 보이게 설정하여 다음 프레임에서 GlobalKey가 유효하도록 함
+      setState(() {
+        _showNow = true;
+      });
+
+      // 위젯이 마운트된 후, 다음 프레임에서 크기를 측정하고 위치를 업데이트
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _updateInfoWindow();
+        }
+      });
+    }
   }
 
   /// Notifies camera movements on [GoogleMap].
@@ -172,8 +182,16 @@ class _CustomInfoWindowState extends State<CustomInfoWindow> {
   void _showInfoWindow() {
     // _updateInfoWindow는 위치를 다시 계산하고 _showNow를 true로 설정
     if (mounted) {
-      // _measuredWidth와 _measuredHeight가 0일 수 있으므로 다시 측정
-      _updateInfoWindow();
+      // 위젯을 즉시 보이게 설정하여 다음 프레임에서 GlobalKey가 유효하도록 함
+      setState(() {
+        _showNow = true;
+      });
+      // _updateInfoWindow는 위치를 다시 계산하고 _showNow를 true로 설정
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _updateInfoWindow();
+        }
+      });
     }
   }
 
