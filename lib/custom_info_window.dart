@@ -3,15 +3,14 @@ library custom_info_window;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 /// Controller to add, update and control the custom info window.
 class CustomInfoWindowController {
   /// Add custom [Widget] and [Marker]'s [LatLng] to [CustomInfoWindow] and make it visible.
   /// Offset to maintain space between [Marker] and [CustomInfoWindow].
-  /// Height of [CustomInfoWindow].
-  /// Width of [CustomInfoWindow].
-  Function(Widget, LatLng, double, double, double)? addInfoWindow;
+  Function(Widget, LatLng, double)? addInfoWindow;
 
   /// Notifies [CustomInfoWindow] to redraw as per change in position.
   VoidCallback? onCameraMove;
@@ -60,8 +59,13 @@ class _CustomInfoWindowState extends State<CustomInfoWindow> {
   Widget? _child;
   LatLng? _latLng;
   double? _offset;
-  double? _height;
-  double? _width;
+
+  // 동적으로 측정된 높이와 너비를 저장할 변수
+  double _measuredHeight = 0;
+  double _measuredWidth = 0;
+
+  // 자식 위젯의 크기를 측정하기 위한 GlobalKey
+  final GlobalKey _childKey = GlobalKey();
 
   @override
   void initState() {
@@ -74,19 +78,27 @@ class _CustomInfoWindowState extends State<CustomInfoWindow> {
 
   /// Calculate the position of [CustomInfoWindow] and redraw on screen.
   void _updateInfoWindow() async {
-    if (_latLng == null ||
-        _child == null ||
-        _offset == null ||
-        _height == null ||
-        _width == null ||
-        widget.controller.googleMapController == null ||
-        !mounted) { // 위젯이 마운트되었는지 확인
+    if (_latLng == null || _child == null || _offset == null
+      || widget.controller.googleMapController == null
+      || !mounted // 위젯이 마운트되었는지 확인
+    ) {
       return;
     }
 
+    // 렌더링된 자식 위젯의 실제 크기 측정
+    final RenderBox? renderBox = _childKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null || !renderBox.hasSize) {
+      // 위젯이 아직 렌더링되지 않았거나 크기를 가지지 못함
+      // 다음 프레임에 다시 시도하도록 스케줄링 (_addInfoWindow에서 이미 처리)
+      return;
+    }
+
+    _measuredWidth = renderBox.size.width;
+    _measuredHeight = renderBox.size.height;
+
     final ScreenCoordinate screenCoordinate = await widget
-        .controller.googleMapController!
-        .getScreenCoordinate(_latLng!);
+      .controller.googleMapController!
+      .getScreenCoordinate(_latLng!);
 
     double devicePixelRatio;
     if (kIsWeb) {
@@ -105,9 +117,9 @@ class _CustomInfoWindowState extends State<CustomInfoWindow> {
     }
 
     // x 좌표는 정보창 너비의 절반만큼 왼쪽으로 이동
-    double left = (screenCoordinate.x.toDouble() / devicePixelRatio) - (_width! / 2);
+    double left = (screenCoordinate.x.toDouble() / devicePixelRatio) - (_measuredWidth! / 2);
     // y 좌표는 정보창 높이와 offset만큼 위로 이동
-    double top = (screenCoordinate.y.toDouble() / devicePixelRatio) - (_offset! + _height!);
+    double top = (screenCoordinate.y.toDouble() / devicePixelRatio) - (_offset! + _measuredHeight!);
 
     if (mounted) { // setState를 호출하기 전에 mounted 상태를 확인
       setState(() {
@@ -115,7 +127,7 @@ class _CustomInfoWindowState extends State<CustomInfoWindow> {
         _leftMargin = left;
         _topMargin = top;
       });
-      widget.onChange.call(top, left, _width!, _height!);
+      widget.onChange.call(top, left, _measuredWidth, _measuredHeight);
     }
   }
 
@@ -123,20 +135,22 @@ class _CustomInfoWindowState extends State<CustomInfoWindow> {
   /// [offsetValue] is the vertical space between the top of the marker and the bottom of the info window.
   /// [infoWindowHeight] is the height of the info window widget.
   /// [infoWindowWidth] is the width of the info window widget.
-  void _addInfoWindow(Widget child, LatLng latLng, double offsetValue,
-      double infoWindowHeight, double infoWindowWidth) {
+  void _addInfoWindow(
+    Widget child,
+    LatLng latLng,
+    double offsetValue,
+  ) {
     _child = child;
     _latLng = latLng;
-    _offset = offsetValue; // 마커 y좌표에서 (정보창 높이 + offset) 만큼 위로 올립니다.
-    _height = infoWindowHeight;
-    _width = infoWindowWidth;
-    if (mounted) { // initState에서 호출될 수 있으므로 mounted 체크
-      _updateInfoWindow();
-    } else { // 아직 마운트되지 않았다면, 마운트된 후 첫 빌드에서 처리되도록 예약 (예: addPostFrameCallback)
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _updateInfoWindow();
-      });
-    }
+    _offset = offsetValue; // 마커 y좌표에서 (정보창 높이 + offset) 만큼 위로 올림
+
+    // 위젯이 마운트된 후, 다음 프레임에서 크기를 측정하고 위치를 업데이트
+    // _child가 처음 렌더링될 때 크기가 결정되므로 필요
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _updateInfoWindow();
+      }
+    });
   }
 
   /// Notifies camera movements on [GoogleMap].
@@ -158,6 +172,7 @@ class _CustomInfoWindowState extends State<CustomInfoWindow> {
   void _showInfoWindow() {
     // _updateInfoWindow는 위치를 다시 계산하고 _showNow를 true로 설정
     if (mounted) {
+      // _measuredWidth와 _measuredHeight가 0일 수 있으므로 다시 측정
       _updateInfoWindow();
     }
   }
@@ -168,12 +183,11 @@ class _CustomInfoWindowState extends State<CustomInfoWindow> {
       left: _leftMargin,
       top: _topMargin,
       child: Visibility(
-        visible: _showNow &&
-            _child != null &&
-            _latLng != null,
-        child: SizedBox(
-          height: _height,
-          width: _width,
+        visible: _showNow && _child != null && _latLng != null,
+        // SizedBox 대신 Container를 사용하여 필요시 데코레이션
+        child: Container(
+          key: _childKey, // GlobalKey 할당
+          // height와 width를 명시하지 않아 자식 위젯이 자신의 콘텐츠 크기만큼 확장되도록 함
           child: _child,
         ),
       ),
