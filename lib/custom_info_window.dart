@@ -112,7 +112,7 @@ class _CustomInfoWindowState extends State<CustomInfoWindow> {
       // 모바일 플랫폼 (Android, iOS)에서는 실제 devicePixelRatio를 사용
       // context가 유효한지 확인하기 위해 mounted를 체크
       if (mounted) {
-        devicePixelRatio = MediaQuery.of(context).devicePixelRatio;
+        devicePixelRatio = Theme.of(context).platform == TargetPlatform.android ? MediaQuery.of(context).devicePixelRatio : 1.0;
       } else {
         // context가 유효하지 않으면 기본값 또는 이전 값을 사용하거나 업데이트를 중단
         devicePixelRatio = 1.0;
@@ -121,9 +121,9 @@ class _CustomInfoWindowState extends State<CustomInfoWindow> {
     }
 
     // x 좌표는 정보창 너비의 절반만큼 왼쪽으로 이동
-    double left = (screenCoordinate.x.toDouble() / devicePixelRatio) - (_measuredWidth! / 2);
+    double left = (screenCoordinate.x.toDouble() / devicePixelRatio) - (_measuredWidth / 2);
     // y 좌표는 정보창 높이와 offset만큼 위로 이동
-    double top = (screenCoordinate.y.toDouble() / devicePixelRatio) - (_offset! + _measuredHeight!);
+    double top = (screenCoordinate.y.toDouble() / devicePixelRatio) - (_offset! + _measuredHeight);
 
     if (mounted) { // setState를 호출하기 전에 mounted 상태를 확인
       setState(() {
